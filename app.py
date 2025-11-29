@@ -4,6 +4,7 @@ import httpx
 import os
 
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,6 +15,7 @@ app.add_middleware(
 GH_KEY = os.environ.get("GRAPHHOPPER_KEY")
 GH_URL = "https://graphhopper.com/api/1/route"
 
+
 @app.get("/route")
 async def route(startLat: float, startLon: float, endLat: float, endLon: float):
     if not GH_KEY:
@@ -23,6 +25,7 @@ async def route(startLat: float, startLon: float, endLat: float, endLon: float):
         "profile": "foot",
         "points_encoded": False,
         "instructions": False,
+        "elevation": True,  # include elevation in points
         "points": [
             [startLon, startLat],
             [endLon, endLat],
@@ -31,17 +34,23 @@ async def route(startLat: float, startLon: float, endLat: float, endLon: float):
 
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(GH_URL, params={"key": GH_KEY}, json=payload)
+
     if r.status_code != 200:
         raise HTTPException(status_code=500, detail=f"GraphHopper error: {r.text}")
 
     data = r.json()
+    if not data.get("paths"):
+        raise HTTPException(status_code=500, detail="No path returned from GraphHopper")
+
     path = data["paths"][0]
+
     return {
         "distance_m": path["distance"],
         "time_ms": path["time"],
         "geojson": {
             "type": "Feature",
-            "geometry": path["points"],
+            "geometry": path["points"],  # LineString with [lon, lat, ele]
             "properties": {},
         },
     }
+
